@@ -4,7 +4,9 @@ import { connectDB } from "./config/db.js";
 import userRouter from "./routes/user.route.js"
 import otpRoutes from "./routes/otp.routes.js";
 import jobRoutes from "./routes/jobRoutes.js";
-import category from "./routes/category.routes.js"
+import category from "./routes/category.routes.js";
+import applicationRoutes from "./routes/application.routes.js";
+import analyticsRoutes from "./routes/analytics.routes.js";
 import { sendResponse } from "./utils/response.js";
 
 import cors from "cors";
@@ -33,7 +35,9 @@ app.get("/",(req,res)=>{
 app.use("/api/v1/user",userRouter);
 app.use("/api/v1/otp", otpRoutes);
 app.use("/api/v1/job", jobRoutes);
-app.use("/api/v1/category",category);
+app.use("/api/v1/category", category);
+app.use("/api/v1/applications", applicationRoutes);
+app.use("/api/v1/analytics", analyticsRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -2,21 +2,23 @@ import express from "express";
 import {
   createJob,
   getJobs,
+  getJobBrowse,
   getJobById,
   updateJob,
   deleteJob,
   toggleJobStatus,
   getJobsByCategory,
 } from "../controllers/job.Controller.js";
-import { authenticate, requireRoles } from "../middleware/auth.middleware.js";
+import { authenticate, optionalAuthenticate, requireRoles } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
 const recruiterOrAdmin = [authenticate, requireRoles("admin", "recruiter")];
 
 router.post("/create", ...recruiterOrAdmin, createJob);
-router.get("/get", getJobs);
-router.get("/getJobById/:id", getJobById);
+router.get("/browse", getJobBrowse);
+router.get("/get", optionalAuthenticate, getJobs);
+router.get("/getJobById/:id", optionalAuthenticate, getJobById);
 router.put("/updateJob/:id", ...recruiterOrAdmin, updateJob);
 router.delete("/:id", ...recruiterOrAdmin, deleteJob);
 router.patch("/toggle/:id", ...recruiterOrAdmin, toggleJobStatus);

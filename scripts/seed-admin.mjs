@@ -3,11 +3,9 @@
  * Run from repo root: node scripts/seed-admin.mjs
  *
  * Default login: admin@jobnest.com / Admin@123
- * Change password after first login in production.
  */
 import "dotenv/config";
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 import { User } from "../models/user.model.js";
 
 const uri = process.env.MONGODB_URI || "mongodb://localhost:27017/12pmnew";
@@ -25,11 +23,10 @@ if (existing) {
   process.exit(0);
 }
 
-const hashed = await bcrypt.hash(password, 10);
 await User.create({
   name,
   email,
-  password: hashed,
+  password: String(password),
   role: "admin",
   status: "Active",
   mobile: "0000000000",

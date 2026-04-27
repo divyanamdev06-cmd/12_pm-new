@@ -7,18 +7,21 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "seed:admin": "node scripts/seed-admin.mjs"
+    "seed:admin": "node scripts/seed-admin.mjs",
+    "seed:users": "node scripts/seed-users.mjs",
+    "seed:jobs": "node scripts/seed-categories-and-jobs.mjs",
+    "seed:demo": "node scripts/seed-admin.mjs && node scripts/seed-users.mjs && node scripts/seed-categories-and-jobs.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^9.4.1"
+    "mongoose": "^9.4.1",
+    "multer": "^1.4.5-lts.2"
   }
 }

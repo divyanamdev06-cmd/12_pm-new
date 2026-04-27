@@ -41,6 +41,31 @@ export function authenticate(req, res, next) {
 }
 
 /** Pass allowed role strings; user must be authenticated first (use after `authenticate`). */
+/**
+ * If `Authorization: Bearer` is present and valid, sets `req.auth` like `authenticate`.
+ * Invalid or missing token does not reject the request (for public endpoints with richer behavior when logged in).
+ */
+export function optionalAuthenticate(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) {
+    return next();
+  }
+  const token = header.slice(7).trim();
+  if (!token) {
+    return next();
+  }
+  try {
+    const decoded = verifyAccessToken(token);
+    req.auth = {
+      userId: decoded.sub,
+      role: normalizeRole(decoded.role),
+    };
+  } catch {
+    /* ignore invalid/expired token */
+  }
+  return next();
+}
+
 export function requireRoles(...allowedRoles) {
   return (req, res, next) => {
     if (!req.auth?.userId) {
