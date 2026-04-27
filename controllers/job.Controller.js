@@ -1,4 +1,5 @@
 import Job from "../models/Job.js";
+import { sendResponse } from "../utils/response.js";
 
 // CREATE JOB (Admin)
 // export const createJob = async (req, res) => {
@@ -11,14 +12,23 @@ import Job from "../models/Job.js";
 // };
 export const createJob = async (req, res) => {
   try {
-    const job = await Job.create(req.body);
+    let job = await Job.create(req.body);
 
     // populate after creation
     job = await job.populate("category");
 
-    res.status(201).json({ success: true, job });
+    return sendResponse(res, {
+      statusCode: 201,
+      message: "Job created successfully",
+      data: job,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to create job",
+      error: err.message,
+    });
   }
 };
 
@@ -37,9 +47,17 @@ export const getJobs = async (req, res) => {
       .populate("category")   // 👈 here
       .sort({ createdAt: -1 });
 
-    res.json({ success: true, jobs });
+    return sendResponse(res, {
+      message: "Jobs fetched successfully",
+      data: jobs,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to fetch jobs",
+      error: err.message,
+    });
   }
 };
 
@@ -57,11 +75,26 @@ export const getJobById = async (req, res) => {
     let job = await Job.findById(req.params.id)
       .populate("category");   // 👈 here
 
-    res.json({ success: true, job });
+    if (!job) {
+      return sendResponse(res, {
+        success: false,
+        statusCode: 404,
+        message: "Job not found",
+      });
+    }
+
+    return sendResponse(res, {
+      message: "Job fetched successfully",
+      data: job,
+    });
   } catch (err) {
-  console.error("ERROR:", err);   // 👈 ADD THIS
-  res.status(500).json({ success: false, message: err.message });
-}
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to fetch job",
+      error: err.message,
+    });
+  }
 };
 
 // UPDATE JOB
@@ -72,19 +105,49 @@ export const updateJob = async (req, res) => {
       req.body,
       { new: true }
     );
-    res.json({ success: true, job });
+    if (!job) {
+      return sendResponse(res, {
+        success: false,
+        statusCode: 404,
+        message: "Job not found",
+      });
+    }
+    return sendResponse(res, {
+      message: "Job updated successfully",
+      data: job,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to update job",
+      error: err.message,
+    });
   }
 };
 
 // DELETE JOB
 export const deleteJob = async (req, res) => {
   try {
-    await Job.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: "Job deleted" });
+    const deleted = await Job.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return sendResponse(res, {
+        success: false,
+        statusCode: 404,
+        message: "Job not found",
+      });
+    }
+    return sendResponse(res, {
+      message: "Job deleted successfully",
+      data: deleted,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to delete job",
+      error: err.message,
+    });
   }
 };
 
@@ -93,12 +156,28 @@ export const toggleJobStatus = async (req, res) => {
   try {
     const job = await Job.findById(req.params.id);
 
+    if (!job) {
+      return sendResponse(res, {
+        success: false,
+        statusCode: 404,
+        message: "Job not found",
+      });
+    }
+
     job.isActive = !job.isActive;
     await job.save();
 
-    res.json({ success: true, job });
+    return sendResponse(res, {
+      message: `Job is now ${job.isActive ? "active" : "inactive"}`,
+      data: job,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to toggle job status",
+      error: err.message,
+    });
   }
 };
 
@@ -111,8 +190,16 @@ export const getJobsByCategory = async (req, res) => {
     .populate("category")
     .sort({ createdAt: -1 });
 
-    res.json({ success: true, jobs });
+    return sendResponse(res, {
+      message: "Jobs fetched successfully",
+      data: jobs,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to fetch jobs by category",
+      error: err.message,
+    });
   }
 };

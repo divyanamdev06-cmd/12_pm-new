@@ -2,6 +2,7 @@
 import { Otp } from "../models/otp.model.js";
 import { User } from "../models/user.model.js";
 import { generateOtp } from "../utils/generateOtp.js";
+import { sendResponse } from "../utils/response.js";
 
 export const sendOtp = async (req, res) => {
   try {
@@ -9,16 +10,18 @@ export const sendOtp = async (req, res) => {
 
     // validation
     if (!sendBy || !sendFrom) {
-      return res.status(400).json({
+      return sendResponse(res, {
         success: false,
-        message: "sendBy and sendFrom are required",
+        statusCode: 400,
+        message: "Email (sendBy) and sendFrom are required",
       });
     }
     const user = await User.findOne({ email: sendBy });
     if (!user) {
-      return res.json({
+      return sendResponse(res, {
         success: false,
-        message: "user not found",
+        statusCode: 404,
+        message: "User not found",
       });
     }
 
@@ -40,17 +43,18 @@ export const sendOtp = async (req, res) => {
     // TODO: integrate email or SMS here
     console.log("Generated OTP:", otp);
 
-    return res.status(200).json({
-      success: true,
+    return sendResponse(res, {
       message: "OTP sent successfully",
       data: newOtp,
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({
+    return sendResponse(res, {
       success: false,
-      message: "Server error",
+      statusCode: 500,
+      message: "Failed to send OTP",
+      error: error.message,
     });
   }
 };
@@ -61,62 +65,69 @@ export const verifyOtp = async (req, res) => {
 
     // validation
     if (!sendBy || !sendFrom || !otp) {
-      return res.status(400).json({
+      return sendResponse(res, {
         success: false,
-        message: "sendBy , sendFrom  and otp  are required",
+        statusCode: 400,
+        message: "sendBy, sendFrom and otp are required",
       });
     }
 
     const otprecord = await Otp.findOne({ sendBy, sendFrom, sendFor })
     if (!otprecord) {
-      return res.json({
+      return sendResponse(res, {
         success: false,
-        message: "otp not found",
+        statusCode: 404,
+        message: "OTP not found",
       });
     }
 
     if (otprecord.expiryAt < Date.now()) {
-      return res.json({
+      return sendResponse(res, {
         success: false,
-        message: "otp is expired",
+        statusCode: 410,
+        message: "OTP has expired",
       });
     }
 
     if (otprecord.otp != otp) {
-      return res.json({
+      return sendResponse(res, {
         success: false,
-        message: "wrong otp",
+        statusCode: 401,
+        message: "Invalid OTP",
       });
     }
 
     const user = await User.findOne({ email: sendBy });
     if (!user) {
-      return res.json({
+      return sendResponse(res, {
         success: false,
-        message: "user not found",
+        statusCode: 404,
+        message: "User not found",
       });
     }
 
     if (user.isEmailVerified == true) {
-      return res.json({
+      return sendResponse(res, {
         success: false,
-        message: "email is all ready verified",
+        statusCode: 409,
+        message: "Email is already verified",
       });
     }
     user.isEmailVerified = true;
-    user.save();
+    await user.save();
 
-    return res.status(200).json({
-      success: true,
-      message: "OTP sent successfully",
-      data: newOtp,
+    return sendResponse(res, {
+      message: "OTP verified successfully",
+      data: { userId: user._id, isEmailVerified: true },
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({
+    return sendResponse(res, {
       success: false,
-      message: "Server error",
+      statusCode: 500,
+      message: "Failed to verify OTP",
+      error: error.message,
     });
   }
 };

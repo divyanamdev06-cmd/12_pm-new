@@ -1,20 +1,24 @@
 {
-  "name": "12_pm-new",
+  "name": "jobnest-api",
   "version": "1.0.0",
-  "description": "",
+  "description": "JobNest (JobNest Management System) — Express API",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed:admin": "node scripts/seed-admin.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
     "express": "^5.2.1",
-    "mongobd": "^0.0.1-security.0",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.4.1"
   }
 }

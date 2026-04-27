@@ -15,21 +15,43 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
     },
 
-    password: { type: String, required: true },
+    password: {
+      type: String,
+      required: true,
+      select: false,
+    },
+
     isEmailVerified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
+
+    /** Account visibility for admin moderation (matches admin UI). */
+    status: {
+      type: String,
+      enum: ["Active", "Inactive"],
+      default: "Active",
+    },
 
     mobile: {
       type: String,
     },
 
+    /**
+     * job_seeker — candidate
+     * recruiter — company / hiring
+     * admin — full access
+     * user — legacy alias; treated as job_seeker in JWT and UI
+     */
     role: {
       type: String,
-      enum: ["user", "admin"],
-      default: "user",
+      enum: ["job_seeker", "recruiter", "admin", "user"],
+      default: "job_seeker",
     },
 
-    // 📍 Address Object (better than flat fields)
+    companyName: {
+      type: String,
+      trim: true,
+    },
+
     address: {
       street: String,
       city: String,
@@ -41,31 +63,26 @@ const userSchema = new mongoose.Schema(
       },
     },
 
-    // 🎂 Date of Birth
     dob: {
       type: Date,
     },
 
-    // 🚻 Gender
     gender: {
       type: String,
       enum: ["male", "female", "other"],
     },
 
-    // 📝 Bio
     bio: {
       type: String,
       maxlength: 500,
     },
 
-    // 💡 Skills (array is better)
     skills: [
       {
         type: String,
       },
     ],
 
-    // ❤️ Interests
     interests: [
       {
         type: String,
@@ -73,7 +90,7 @@ const userSchema = new mongoose.Schema(
     ],
   },
   {
-    timestamps: true, // createdAt & updatedAt auto add
+    timestamps: true,
   }
 );
 
