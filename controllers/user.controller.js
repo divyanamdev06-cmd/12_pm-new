@@ -1,6 +1,10 @@
 import fs from "fs";
 import path from "path";
+import mongoose from "mongoose";
 import { User } from "../models/user.model.js";
+import Job from "../models/Job.js";
+import Category from "../models/category.model.js";
+import Application from "../models/application.model.js";
 import { sendResponse } from "../utils/response.js";
 import { signAccessToken } from "../utils/jwt.util.js";
 import { normalizeRole } from "../utils/role.util.js";
@@ -269,6 +273,443 @@ export const getMe = async (req, res) => {
       success: false,
       statusCode: 500,
       message: "Failed to load profile",
+      error: error.message,
+    });
+  }
+};
+
+function profileCompletion(user) {
+  if (!user) return { score: 0, percent: 0 };
+  const checks = [
+    Boolean(String(user.name || "").trim()),
+    Boolean(String(user.email || "").trim()),
+    Boolean(String(user.mobile || "").trim()),
+    Array.isArray(user.skills) ? user.skills.length > 0 : Boolean(String(user.skills || "").trim()),
+    Boolean(String(user.bio || "").trim()),
+    Boolean(String(user.headline || "").trim()),
+    Boolean(String(user.address?.city || "").trim()),
+    Boolean(String(user.address?.state || "").trim()),
+    Boolean(user.resume?.path),
+  ];
+  const score = checks.filter(Boolean).length;
+  const percent = Math.round((score / checks.length) * 100);
+  return { score, percent };
+}
+
+function isoDay(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function topNWithOther(rows, n = 6) {
+  const list = (rows || [])
+    .map((r) => ({ label: String(r._id || "Unknown").trim() || "Unknown", count: Number(r.count || 0) }))
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const top = list.slice(0, n);
+  const other = list.slice(n).reduce((sum, r) => sum + r.count, 0);
+  if (other > 0) top.push({ label: "Other", count: other });
+  return top;
+}
+
+export const getUserDashboardSummary = async (req, res) => {
+  try {
+    const role = normalizeRole(req.auth?.role);
+    if (role !== "job_seeker") {
+      return sendResponse(res, {
+        success: false,
+        statusCode: 403,
+        message: "Job seeker only",
+      });
+    }
+
+    const userId = req.auth.userId;
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 13);
+    start.setHours(0, 0, 0, 0);
+
+    const [
+      me,
+      jobsOpen,
+      categoriesCount,
+      appTotal,
+      appByStatus,
+      appByDay,
+      appByCategory,
+      appByLocation,
+    ] = await Promise.all([
+      User.findById(userId).lean(),
+      Job.countDocuments({
+        isActive: true,
+        publicationStatus: { $in: ["published", null] },
+      }),
+      Category.countDocuments({
+        $or: [{ isActive: true }, { isActive: { $exists: false } }],
+      }),
+      Application.countDocuments({ applicant: userId }),
+      Application.aggregate([
+        {
+          $match: {
+            applicant: mongoose.Types.ObjectId.isValid(String(userId))
+              ? new mongoose.Types.ObjectId(String(userId))
+              : userId,
+          },
+        },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      Application.aggregate([
+        {
+          $match: {
+            applicant: mongoose.Types.ObjectId.isValid(String(userId))
+              ? new mongoose.Types.ObjectId(String(userId))
+              : userId,
+            createdAt: { $gte: start },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      // By category (based on applied job's category)
+      Application.aggregate([
+        {
+          $match: {
+            applicant: mongoose.Types.ObjectId.isValid(String(userId))
+              ? new mongoose.Types.ObjectId(String(userId))
+              : userId,
+          },
+        },
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "jobDoc.category",
+            foreignField: "_id",
+            as: "catDoc",
+          },
+        },
+        { $unwind: { path: "$catDoc", preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: { $ifNull: ["$catDoc.name", "Uncategorized"] },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      // By location (based on applied job's location)
+      Application.aggregate([
+        {
+          $match: {
+            applicant: mongoose.Types.ObjectId.isValid(String(userId))
+              ? new mongoose.Types.ObjectId(String(userId))
+              : userId,
+          },
+        },
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: {
+              $cond: [
+                { $and: [{ $ne: ["$jobDoc.location", null] }, { $ne: ["$jobDoc.location", ""] }] },
+                "$jobDoc.location",
+                "Unspecified",
+              ],
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const statusCounts = { pending: 0, reviewed: 0, shortlisted: 0, rejected: 0 };
+    for (const r of appByStatus || []) {
+      const k = String(r._id || "");
+      if (Object.prototype.hasOwnProperty.call(statusCounts, k)) statusCounts[k] = r.count;
+    }
+
+    const dayMap = new Map((appByDay || []).map((r) => [String(r._id), r.count]));
+    const series = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const key = isoDay(d);
+      series.push({ date: key, count: dayMap.get(key) || 0 });
+    }
+
+    const completion = profileCompletion(me);
+    const byCategory = topNWithOther(appByCategory, 6);
+    const byLocation = topNWithOther(appByLocation, 6);
+
+    return sendResponse(res, {
+      message: "Dashboard summary",
+      data: {
+        kpis: {
+          jobsOpen,
+          categoriesCount,
+          applicationsTotal: appTotal,
+          applicationsByStatus: statusCounts,
+          profileCompletionPercent: completion.percent,
+        },
+        chart: {
+          applicationsLast14Days: series,
+          applicationsByCategory: byCategory,
+          applicationsByLocation: byLocation,
+        },
+      },
+    });
+  } catch (error) {
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to load dashboard summary",
+      error: error.message,
+    });
+  }
+};
+
+export const getRecruiterDashboardSummary = async (req, res) => {
+  try {
+    const role = normalizeRole(req.auth?.role);
+    if (role !== "recruiter") {
+      return sendResponse(res, {
+        success: false,
+        statusCode: 403,
+        message: "Recruiter only",
+      });
+    }
+
+    const recruiterId = req.auth.userId;
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 13);
+    start.setHours(0, 0, 0, 0);
+
+    const recruiterObjId = mongoose.Types.ObjectId.isValid(String(recruiterId))
+      ? new mongoose.Types.ObjectId(String(recruiterId))
+      : recruiterId;
+
+    const [
+      jobsTotal,
+      jobsActive,
+      jobsPublished,
+      appsTotal,
+      appsByStatus,
+      appsByDay,
+      appsByCategory,
+      appsByLocation,
+      topJobs,
+    ] = await Promise.all([
+      Job.countDocuments({ createdBy: recruiterId }),
+      Job.countDocuments({ createdBy: recruiterId, isActive: true }),
+      Job.countDocuments({ createdBy: recruiterId, publicationStatus: "published" }),
+      Application.aggregate([
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "jobDoc.createdBy": recruiterObjId } },
+        { $count: "total" },
+      ]),
+      Application.aggregate([
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "jobDoc.createdBy": recruiterObjId } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      Application.aggregate([
+        {
+          $match: { createdAt: { $gte: start } },
+        },
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "jobDoc.createdBy": recruiterObjId } },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      Application.aggregate([
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "jobDoc.createdBy": recruiterObjId } },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "jobDoc.category",
+            foreignField: "_id",
+            as: "catDoc",
+          },
+        },
+        { $unwind: { path: "$catDoc", preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: { $ifNull: ["$catDoc.name", "Uncategorized"] },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      Application.aggregate([
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "jobDoc.createdBy": recruiterObjId } },
+        {
+          $group: {
+            _id: {
+              $cond: [
+                { $and: [{ $ne: ["$jobDoc.location", null] }, { $ne: ["$jobDoc.location", ""] }] },
+                "$jobDoc.location",
+                "Unspecified",
+              ],
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      Application.aggregate([
+        {
+          $lookup: {
+            from: "jobs",
+            localField: "job",
+            foreignField: "_id",
+            as: "jobDoc",
+          },
+        },
+        { $unwind: { path: "$jobDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "jobDoc.createdBy": recruiterObjId } },
+        {
+          $group: {
+            _id: "$jobDoc._id",
+            title: { $first: "$jobDoc.title" },
+            company: { $first: "$jobDoc.company" },
+            location: { $first: "$jobDoc.location" },
+            total: { $sum: 1 },
+            pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+            reviewed: { $sum: { $cond: [{ $eq: ["$status", "reviewed"] }, 1, 0] } },
+            shortlisted: { $sum: { $cond: [{ $eq: ["$status", "shortlisted"] }, 1, 0] } },
+            rejected: { $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] } },
+          },
+        },
+        { $sort: { total: -1 } },
+        { $limit: 8 },
+        {
+          $project: {
+            _id: 0,
+            jobId: "$_id",
+            title: 1,
+            company: 1,
+            location: 1,
+            applicationCount: "$total",
+            pending: 1,
+            reviewed: 1,
+            shortlisted: 1,
+            rejected: 1,
+          },
+        },
+      ]),
+    ]);
+
+    const appsTotalNumber = Array.isArray(appsTotal) ? Number(appsTotal[0]?.total || 0) : 0;
+
+    const statusCounts = { pending: 0, reviewed: 0, shortlisted: 0, rejected: 0 };
+    for (const r of appsByStatus || []) {
+      const k = String(r._id || "");
+      if (Object.prototype.hasOwnProperty.call(statusCounts, k)) statusCounts[k] = r.count;
+    }
+
+    const dayMap = new Map((appsByDay || []).map((r) => [String(r._id), r.count]));
+    const series = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const key = isoDay(d);
+      series.push({ date: key, count: dayMap.get(key) || 0 });
+    }
+
+    return sendResponse(res, {
+      message: "Recruiter dashboard summary",
+      data: {
+        kpis: {
+          jobsTotal,
+          jobsActive,
+          jobsPublished,
+          applicationsTotal: appsTotalNumber,
+          applicationsByStatus: statusCounts,
+        },
+        chart: {
+          applicationsLast14Days: series,
+          applicationsByCategory: topNWithOther(appsByCategory, 6),
+          applicationsByLocation: topNWithOther(appsByLocation, 6),
+          topJobsByApplications: topJobs || [],
+        },
+      },
+    });
+  } catch (error) {
+    return sendResponse(res, {
+      success: false,
+      statusCode: 500,
+      message: "Failed to load recruiter dashboard summary",
       error: error.message,
     });
   }
