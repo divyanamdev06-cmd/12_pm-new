@@ -1,12 +1,12 @@
 {
   "name": "jobnest-api",
   "version": "1.0.0",
-  "description": "JobNest (JobNest Management System) — Express API",
+  "description": "JobNest (JobNest Management System) \u2014 Express API",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node api.js && node server.js",
+    "dev": "node api.js && node --watch server.js",
     "seed:admin": "node scripts/seed-admin.mjs",
     "seed:users": "node scripts/seed-users.mjs",
     "seed:jobs": "node scripts/seed-categories-and-jobs.mjs",
